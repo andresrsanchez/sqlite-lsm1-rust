@@ -1,0 +1,19 @@
+fn main() {
+    cc::Build::new()
+        .file("src/lsm_ckpt.c")
+        .file("src/lsm_file.c")
+        .file("src/lsm_log.c")
+        .file("src/lsm_main.c")
+        .file("src/lsm_mem.c")
+        .file("src/lsm_mutex.c")
+        .file("src/lsm_shared.c")
+        .file("src/lsm_sorted.c")
+        .file("src/lsm_str.c")
+        .file("src/lsm_tree.c")
+        .file("src/lsm_unix.c")
+        .file("src/lsm_varint.c")
+        .file("src/lsm_win32.c")
+        .include("src/lsmInt.h")
+        .include("src/lsm.h")
+        .compile("lsm");
+}
