@@ -15,6 +15,7 @@ pub struct LSM<'a, K: LSMType<'a>, V: LSMType<'a>>(
 );
 
 pub trait LSMType<'a>: Sized {
+    fn free(ptr: *mut c_void);
     fn to_raw(self) -> (*mut c_void, c_int);
     fn from_raw(ptr: *const c_void, ptr_len: c_int) -> Self;
 }
@@ -22,9 +23,14 @@ pub trait LSMType<'a>: Sized {
 macro_rules! to_raw(
     ($t:ty) => (
         impl<'a> LSMType<'a> for $t {
+            fn free(ptr: *mut c_void) {
+                unsafe {
+                    Box::from_raw(ptr);
+                };
+            }
             fn to_raw(self) -> (*mut c_void, c_int) {
                 let raw = Box::into_raw(Box::new(self)) as *mut c_void;
-                return (raw, std::mem::size_of::<$t>() as _);
+                return (raw, std::mem::size_of::<$t>() as _); //as _ for i64/u64
             }
             fn from_raw(ptr: *const c_void, _:c_int) -> Self {
                 let handle = ptr as *mut $t;
@@ -33,31 +39,33 @@ macro_rules! to_raw(
         }
     )
 );
-
+to_raw!(i8);
+to_raw!(i16);
 to_raw!(i32);
+to_raw!(i64); //test
+to_raw!(u8);
+to_raw!(u16);
+to_raw!(u32);
+to_raw!(u64); //test
 
-// impl<'a> LSMType<'a> for String {
-//     fn to_raw(self) -> (*mut c_void, c_int) {
-//         let l = self.len();
-//         let ck = CString::new(self).unwrap();
-//         let ptr_ck = ck.as_ptr() as *mut c_void;
-//         return (ptr_ck, l as _);
-//         // let l = self.len();
-//         // let raw = Box::into_raw(Box::new(self)) as *mut c_void;
-//         // return (raw, l as _);
-//         // let cstr = CString::new(self).unwrap();
-//         // return (cstr.into_raw() as _, l as _);
-//     }
-//     fn from_raw(ptr: *const c_void, ptr_len: c_int) -> Self {
-//         let kraw =
-//             unsafe { String::from_raw_parts(ptr as *mut u8, ptr_len as usize, ptr_len as usize) };
-//         return kraw;
-//         // let result = unsafe { std::ffi::CStr::from_ptr(ptr as _) };
-//         // let lol = result.to_str();
-//         // let result_str = result.to_str().unwrap();
-//         // return result_str.to_owned();
-//     }
-// }
+impl<'a> LSMType<'a> for String {
+    fn free(ptr: *mut c_void) {
+        unsafe {
+            drop(CString::from_raw(ptr as _));
+        };
+    }
+    fn to_raw(self) -> (*mut c_void, c_int) {
+        let length = self.len();
+        let ck = CString::new(self).unwrap();
+        let ptr_ck = ck.into_raw() as *mut c_void;
+        return (ptr_ck, length as _);
+    }
+    fn from_raw(ptr: *const c_void, ptr_len: c_int) -> Self {
+        let kraw =
+            unsafe { String::from_raw_parts(ptr as *mut u8, ptr_len as usize, ptr_len as usize) };
+        return kraw;
+    }
+}
 
 pub struct LSMIterator<'a, K: LSMType<'a>, V: LSMType<'a>> {
     _k: std::marker::PhantomData<K>,
@@ -117,9 +125,7 @@ impl<'a, K: LSMType<'a>, V: LSMType<'a>> LSM<'a, K, V> {
         } else {
             None
         };
-        unsafe {
-            Box::from_raw(k.0);
-        };
+        K::free(k.0);
         return r;
     }
     pub fn delete(self, key: K) -> Result<(), Error> {
@@ -142,10 +148,8 @@ impl<'a, K: LSMType<'a>, V: LSMType<'a>> LSM<'a, K, V> {
         } else {
             Err(Error::from(ErrorKind::Other))
         };
-        unsafe {
-            Box::from_raw(k.0);
-            Box::from_raw(v.0)
-        };
+        K::from_raw(k.0, k.1);
+        V::from_raw(v.0, v.1);
         return r;
     }
     pub fn open(name: &str) -> Result<LSM<'a, K, V>, Error> {
@@ -249,24 +253,14 @@ mod tests {
 
     #[test]
     fn iterate_lol() {
-        let lsm = LSM::<i32, i32>::open("name").expect("cannot open db");
-        for i in 0..10 {
-            lsm.insert(i, i + 1);
-        }
-        // lsm.insert("11", "1").expect("cannot insert");
-        // lsm.insert("222", "2").expect("cannot insert");
+        let lsm = LSM::<String, String>::open("name").expect("cannot open db");
+        lsm.insert("1".to_string(), "1".to_string());
+        lsm.insert("2".to_string(), "2".to_string());
+
         for (k, v) in lsm.into_iter().rev() {
             println!("{}", k);
             println!("{}", v);
         }
-        // lsm.insert("33", "1").expect("cannot insert");
-        // for val in lsm.into_iter() {
-        //     println!("{}", val.k);
-        //     println!("{}", val.v);
-        // }
-        // lsm.insert("222", "2").expect("cannot insert");
-        // for lol in lsm {}
-        //let mut values = LSMValues::new(&lsm).expect("cannot create iterator");
     }
 
     #[test]
