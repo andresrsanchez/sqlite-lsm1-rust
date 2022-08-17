@@ -2,7 +2,6 @@ use ffi::*;
 use std::ffi::{c_void, CString};
 use std::io::{Error, ErrorKind};
 use std::os::raw::{c_char, c_int};
-use std::ptr::slice_from_raw_parts;
 include! {"./ffi.rs"}
 fn main() {}
 
@@ -19,46 +18,46 @@ pub trait LSMType<'a>: Sized {
     fn to_raw(self) -> (*mut c_void, c_int);
     fn from_raw(ptr: *const c_void, ptr_len: c_int) -> Self;
 }
-impl<'a> LSMType<'a> for i32 {
-    fn to_raw(self) -> (*mut c_void, c_int) {
-        let raw = Box::into_raw(Box::new(self)) as *mut c_void;
-        return (raw, 4);
-    }
 
-    fn from_raw(ptr: *const c_void, ptr_len: c_int) -> Self {
-        return 0;
-        // let lol = unsafe { *ptr as i32 };
-        // let lil = unsafe { Box::from_raw(ptr as *mut i32) };
-        // return (*lil).to_owned();
-        // let mut arr = [0u8; 4];
-        // let raw = slice_from_raw_parts(ptr as *mut u8, ptr_len as usize);
-        // unsafe { arr.copy_from_slice(&*raw) };
-        // return i32::from_be_bytes(arr);
-    }
-}
+macro_rules! to_raw(
+    ($t:ty) => (
+        impl<'a> LSMType<'a> for $t {
+            fn to_raw(self) -> (*mut c_void, c_int) {
+                let raw = Box::into_raw(Box::new(self)) as *mut c_void;
+                return (raw, std::mem::size_of::<$t>() as _);
+            }
+            fn from_raw(ptr: *const c_void, _:c_int) -> Self {
+                let handle = ptr as *mut $t;
+                return unsafe { *handle };
+            }
+        }
+    )
+);
 
-impl<'a> LSMType<'a> for String {
-    fn to_raw(self) -> (*mut c_void, c_int) {
-        let l = self.len();
-        let ck = CString::new(self).unwrap();
-        let ptr_ck = ck.as_ptr() as *mut c_void;
-        return (ptr_ck, l as _);
-        // let l = self.len();
-        // let raw = Box::into_raw(Box::new(self)) as *mut c_void;
-        // return (raw, l as _);
-        // let cstr = CString::new(self).unwrap();
-        // return (cstr.into_raw() as _, l as _);
-    }
-    fn from_raw(ptr: *const c_void, ptr_len: c_int) -> Self {
-        let kraw =
-            unsafe { String::from_raw_parts(ptr as *mut u8, ptr_len as usize, ptr_len as usize) };
-        return kraw;
-        // let result = unsafe { std::ffi::CStr::from_ptr(ptr as _) };
-        // let lol = result.to_str();
-        // let result_str = result.to_str().unwrap();
-        // return result_str.to_owned();
-    }
-}
+to_raw!(i32);
+
+// impl<'a> LSMType<'a> for String {
+//     fn to_raw(self) -> (*mut c_void, c_int) {
+//         let l = self.len();
+//         let ck = CString::new(self).unwrap();
+//         let ptr_ck = ck.as_ptr() as *mut c_void;
+//         return (ptr_ck, l as _);
+//         // let l = self.len();
+//         // let raw = Box::into_raw(Box::new(self)) as *mut c_void;
+//         // return (raw, l as _);
+//         // let cstr = CString::new(self).unwrap();
+//         // return (cstr.into_raw() as _, l as _);
+//     }
+//     fn from_raw(ptr: *const c_void, ptr_len: c_int) -> Self {
+//         let kraw =
+//             unsafe { String::from_raw_parts(ptr as *mut u8, ptr_len as usize, ptr_len as usize) };
+//         return kraw;
+//         // let result = unsafe { std::ffi::CStr::from_ptr(ptr as _) };
+//         // let lol = result.to_str();
+//         // let result_str = result.to_str().unwrap();
+//         // return result_str.to_owned();
+//     }
+// }
 
 pub struct LSMIterator<'a, K: LSMType<'a>, V: LSMType<'a>> {
     _k: std::marker::PhantomData<K>,
@@ -143,10 +142,10 @@ impl<'a, K: LSMType<'a>, V: LSMType<'a>> LSM<'a, K, V> {
         } else {
             Err(Error::from(ErrorKind::Other))
         };
-        // unsafe {
-        //     Box::from_raw(k.0);
-        //     Box::from_raw(v.0)
-        // };
+        unsafe {
+            Box::from_raw(k.0);
+            Box::from_raw(v.0)
+        };
         return r;
     }
     pub fn open(name: &str) -> Result<LSM<'a, K, V>, Error> {
@@ -274,25 +273,26 @@ mod tests {
     fn bench_add_two() {
         let lsm = LSM::<i32, i32>::open("name").expect("cannot open db");
         let now = std::time::Instant::now();
-        for i in 0..100_000 {
-            lsm.insert(i, i + 1);
+        let j = 0;
+        for i in 1..100_000 {
+            lsm.insert(j, i + 1);
         }
         println!("{}", now.elapsed().as_micros());
     }
 
-    #[test]
-    fn bench_add_three() {
-        let lsm = LSM::<String, String>::open("name").expect("cannot open db");
-        let now = std::time::Instant::now();
-        for i in 0..10 {
-            lsm.insert(i.to_string(), (i + 1).to_string());
-        }
+    // #[test]
+    // fn bench_add_three() {
+    //     let lsm = LSM::<String, String>::open("name").expect("cannot open db");
+    //     let now = std::time::Instant::now();
+    //     for i in 0..10 {
+    //         lsm.insert(i.to_string(), (i + 1).to_string());
+    //     }
 
-        for (k, v) in lsm.into_iter().rev() {
-            println!("{}", k);
-            println!("{}", v);
-        }
+    //     for (k, v) in lsm.into_iter().rev() {
+    //         println!("{}", k);
+    //         println!("{}", v);
+    //     }
 
-        println!("{}", now.elapsed().as_micros());
-    }
+    //     println!("{}", now.elapsed().as_micros());
+    // }
 }
