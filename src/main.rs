@@ -1,5 +1,5 @@
 use ffi::*;
-use std::ffi::{c_void, CString};
+use std::ffi::{c_void, CStr, CString};
 use std::io::{Error, ErrorKind};
 use std::os::raw::{c_char, c_int};
 include! {"./ffi.rs"}
@@ -61,9 +61,28 @@ impl<'a> LSMType<'a> for String {
         return (ptr_ck, length as _);
     }
     fn from_raw(ptr: *const c_void, ptr_len: c_int) -> Self {
-        let kraw =
+        let raw =
             unsafe { String::from_raw_parts(ptr as *mut u8, ptr_len as usize, ptr_len as usize) };
-        return kraw;
+        return raw;
+    }
+}
+
+impl<'a> LSMType<'a> for &str {
+    fn free(ptr: *mut c_void) {
+        unsafe {
+            drop(CString::from_raw(ptr as _));
+        };
+    }
+    fn to_raw(self) -> (*mut c_void, c_int) {
+        let length = self.len();
+        let ck = CString::new(self).unwrap();
+        let ptr_ck = ck.into_raw() as *mut c_void;
+        return (ptr_ck, length as _);
+    }
+    fn from_raw(ptr: *const c_void, ptr_len: c_int) -> Self {
+        let s = unsafe { std::slice::from_raw_parts(ptr as _, ptr_len as _) };
+        let lol = std::str::from_utf8(s).unwrap();
+        return lol;
     }
 }
 
@@ -253,6 +272,18 @@ mod tests {
 
     #[test]
     fn iterate_lol() {
+        let lsm = LSM::<&str, &str>::open("name").expect("cannot open db");
+        lsm.insert("1", "1");
+        lsm.insert("2", "2");
+
+        for (k, v) in lsm.into_iter().rev() {
+            println!("{}", k);
+            println!("{}", v);
+        }
+    }
+
+    #[test]
+    fn iterate_lil() {
         let lsm = LSM::<String, String>::open("name").expect("cannot open db");
         lsm.insert("1".to_string(), "1".to_string());
         lsm.insert("2".to_string(), "2".to_string());
@@ -265,11 +296,16 @@ mod tests {
 
     #[test]
     fn bench_add_two() {
-        let lsm = LSM::<i32, i32>::open("name").expect("cannot open db");
-        let now = std::time::Instant::now();
-        let j = 0;
+        let mut lol: std::collections::HashMap<String, String> = std::collections::HashMap::new();
         for i in 1..100_000 {
-            lsm.insert(j, i + 1);
+            let leel = i.to_string();
+            let lool = i.to_string();
+            lol.insert(leel, lool);
+        }
+        let lsm = LSM::<&str, &str>::open("name").expect("cannot open db");
+        let now = std::time::Instant::now();
+        for (k, v) in lol {
+            lsm.insert(k.as_str(), v.as_str());
         }
         println!("{}", now.elapsed().as_micros());
     }
