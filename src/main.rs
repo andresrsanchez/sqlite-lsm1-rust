@@ -175,21 +175,51 @@ impl<'a, K: LSMType<'a>, V: LSMType<'a>> LSM<'a, K, V> {
         let lsm_env: *mut lsm_env = std::ptr::null_mut();
         let mut lsm_db: *mut lsm_db = std::ptr::null_mut();
         unsafe {
+            //change this unsafe
             let ok = lsm_new(lsm_env, &mut lsm_db);
             if ok != OK {
                 return Err(Error::from(ErrorKind::Other));
             }
             let cname = CString::new(name).unwrap();
             let c_world: *const c_char = cname.as_ptr() as *const c_char;
-            match lsm_open(lsm_db, c_world) {
-                OK => Ok(LSM(
+            let lsm = match lsm_open(lsm_db, c_world) {
+                OK => LSM::<'a, K, V>(
                     std::marker::PhantomData,
                     std::marker::PhantomData,
                     std::marker::PhantomData,
                     lsm_db,
-                )),
-                _ => Err(Error::from(ErrorKind::Other)),
+                ),
+                _ => return Err(Error::from(ErrorKind::Other)),
+            };
+            let lsm_options: std::collections::HashSet<i32> = std::collections::HashSet::from([
+                LSM_CONFIG_AUTOCHECKPOINT as _,
+                LSM_CONFIG_AUTOFLUSH as _,
+                LSM_CONFIG_AUTOMERGE as _,
+                LSM_CONFIG_AUTOWORK as _,
+                LSM_CONFIG_MMAP as _,
+                LSM_CONFIG_MULTIPLE_PROCESSES as _,
+                LSM_CONFIG_SAFETY as _,
+                LSM_CONFIG_USE_LOG as _,
+            ]);
+            let options: Vec<Vec<&str>> = name
+                .split("&")
+                .map(|x| x.split("=").collect())
+                .filter(|x: &Vec<&str>| x.len() == 2)
+                .collect(); //improve collect in here¿?
+            for option in options {
+                let (k, v) = match (option[0].parse::<i32>(), option[1].parse::<i32>()) {
+                    (Ok(k), Ok(v)) => match lsm_options.contains(&k) {
+                        true => (k, v),
+                        false => return Err(Error::from(ErrorKind::Other)),
+                    },
+                    _ => return Err(Error::from(ErrorKind::Other)),
+                };
+                match lsm_config(lsm_db, k, v) {
+                    OK => continue,
+                    _ => return Err(Error::from(ErrorKind::Other)),
+                }
             }
+            return Ok(lsm);
         }
     }
 }

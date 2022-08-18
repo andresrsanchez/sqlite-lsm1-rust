@@ -848,7 +848,7 @@ mod ffi {
         pub fn lsm_config(
             arg1: *mut lsm_db,
             arg2: ::std::os::raw::c_int,
-            ...
+            args3: ...
         ) -> ::std::os::raw::c_int;
     }
     #[repr(C)]
