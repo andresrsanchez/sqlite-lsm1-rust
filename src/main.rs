@@ -1,5 +1,5 @@
 use ffi::*;
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{c_void, CString};
 use std::io::{Error, ErrorKind};
 use std::os::raw::{c_char, c_int};
 include! {"./ffi.rs"}
@@ -154,9 +154,7 @@ impl<'a, K: LSMType<'a>, V: LSMType<'a>> LSM<'a, K, V> {
         } else {
             Err(Error::from(ErrorKind::Other))
         };
-        unsafe {
-            Box::from_raw(k.0);
-        };
+        K::free(k.0);
         return r;
     }
     pub fn insert(&self, key: K, value: V) -> Result<(), Error> {
@@ -171,7 +169,7 @@ impl<'a, K: LSMType<'a>, V: LSMType<'a>> LSM<'a, K, V> {
         V::from_raw(v.0, v.1);
         return r;
     }
-    pub fn open(name: &str) -> Result<LSM<'a, K, V>, Error> {
+    pub fn open(name: &str, config: &str) -> Result<LSM<'a, K, V>, Error> {
         let lsm_env: *mut lsm_env = std::ptr::null_mut();
         let mut lsm_db: *mut lsm_db = std::ptr::null_mut();
         unsafe {
@@ -181,8 +179,8 @@ impl<'a, K: LSMType<'a>, V: LSMType<'a>> LSM<'a, K, V> {
                 return Err(Error::from(ErrorKind::Other));
             }
             let cname = CString::new(name).unwrap();
-            let c_world: *const c_char = cname.as_ptr() as *const c_char;
-            let lsm = match lsm_open(lsm_db, c_world) {
+            let filename: *const c_char = cname.as_ptr() as *const c_char;
+            let lsm = match lsm_open(lsm_db, filename) {
                 OK => LSM::<'a, K, V>(
                     std::marker::PhantomData,
                     std::marker::PhantomData,
@@ -201,7 +199,7 @@ impl<'a, K: LSMType<'a>, V: LSMType<'a>> LSM<'a, K, V> {
                 LSM_CONFIG_SAFETY as _,
                 LSM_CONFIG_USE_LOG as _,
             ]);
-            let options: Vec<Vec<&str>> = name
+            let options: Vec<Vec<&str>> = config
                 .split("&")
                 .map(|x| x.split("=").collect())
                 .filter(|x: &Vec<&str>| x.len() == 2)
@@ -246,6 +244,7 @@ impl<'a, K: LSMType<'a>, V: LSMType<'a>> Iterator for LSMIterator<'a, K, V> {
     fn next(&mut self) -> Option<Self::Item> {
         let cursor = self.f_csr?;
         if self.is_first {
+            //is_valid in here¿?
             if unsafe { lsm_csr_first(cursor) } != OK {
                 unsafe { lsm_csr_close(cursor) };
                 return None;
@@ -273,6 +272,7 @@ impl<'a, K: LSMType<'a>, V: LSMType<'a>> DoubleEndedIterator for LSMIterator<'a,
     fn next_back(&mut self) -> Option<Self::Item> {
         let cursor = self.b_csr?;
         if self.is_last {
+            //is_valid in here¿?
             if unsafe { lsm_csr_last(cursor) } != OK {
                 unsafe { lsm_csr_close(cursor) };
                 return None;
@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn iterate_lol() {
-        let lsm = LSM::<&str, &str>::open("name").expect("cannot open db");
+        let lsm = LSM::<&str, &str>::open("name", "").expect("cannot open db");
         lsm.insert("1", "1");
         lsm.insert("2", "2");
 
@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn iterate_lil() {
-        let lsm = LSM::<String, String>::open("name").expect("cannot open db");
+        let lsm = LSM::<String, String>::open("name", "").expect("cannot open db");
         lsm.insert("1".to_string(), "1".to_string());
         lsm.insert("2".to_string(), "2".to_string());
 
@@ -332,7 +332,7 @@ mod tests {
             let lool = i.to_string();
             lol.insert(leel, lool);
         }
-        let lsm = LSM::<&str, &str>::open("name").expect("cannot open db");
+        let lsm = LSM::<&str, &str>::open("name", "").expect("cannot open db");
         let now = std::time::Instant::now();
         for (k, v) in lol {
             lsm.insert(k.as_str(), v.as_str());
